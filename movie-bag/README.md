@@ -1,259 +1,268 @@
-## Part 0: Setup & Basic CRUD API
+## Part 1: Using MongoDB with Flask
 
-Howdy! Welcome to the Flask Rest API - Zero to Yoda, tutorial series. We will go through building a Movie database where a user can (Add, Edit, Update & delete) `Genre`, `Movie`, and `Casts`. First of all, we will start with a basic APIs structure with just `Flask` and then learn about integrating `MongoDB` with the application, finally, we will learn about structuring our API following the best practices with the minimal setup using `Flask-RESTful`.
+Howdy! In the last [Part](https://dev.to/paurakhsharma/flask-rest-api-part-0-setup-basic-crud-api-4650) of the series, we learned how to create a basic `CRUD` REST API functionality using python `list`. But that's not how the real-world applications are built, because if your server is restarted or god forbids crashes then you are gonna lose all the information stored in your server. To solve those problems (and many others) database is used. So, that's what we are gonna do. We are going to use [MongoDB](https://docs.mongodb.com/manual/) as our database.
 
-What we are going to learn in this series?
- - [Flask](https://palletsprojects.com/p/flask/) - For our web server.
- - [flask-restful](https://flask-restful.readthedocs.io/en/latest/installation.html) - For building cool Rest-APIs.
- - [Pipenv](https://pipenv.readthedocs.io/en/latest/) For managing python virtual environments.
- - [mongoengine](http://docs.mongoengine.org/projects/flask-mongoengine/en/latest/) - For managing our database.
- - [flask-marshmallow](https://flask-marshmallow.readthedocs.io/en/latest/) - For serializing user requests.
- - [Postman](https://www.getpostman.com/downloads/) - For testing our APIs
+If you are just starting from this part, you can find all the code we wrote till now [here](https://github.com/paurakhsharma/flask-rest-api-blog-series/tree/master/Part%20-%200).
 
+Before we start make sure you have installed MongoDB in your system. If you haven't already you can install for [Linux](https://docs.mongodb.com/manual/administration/install-on-linux/), [Windown](https://docs.mongodb.com/manual/tutorial/install-mongodb-on-windows/) and [macOS](https://docs.mongodb.com/manual/tutorial/install-mongodb-on-os-x/).
 
-Why flask?
- - Easy to get started 😊
- - Great for building Rest APIs and microservices.
- - Used by big companies like Netflix, Reddit, Lyft, Et cetera.
- - Great for building APIS for machine learning applications.
- - Force is strong with this one 😉
+There are mainly to popular libraries which makes working with MongoDB easier:
 
-Who is this series for?
- - Beginners with basic Python knowledge who wants to build cool apps.
- - Experienced flask developers who have been working with flask `SSR` (Server Side Rendering).
-
-### So, let's get started.
-First of all, create a new directory and browse to the newly created directory, I'm gonna call it `movie-bag`.
-
+1) [Pymongo](https://api.mongodb.com/python/current/) is a low-level Python wrapper around MongoDB, working with `Pymongo` is similar to writing the MongoDB query directly.
+Here is the simple example of updating the name of a movie whose `id` matches the given `id` using `Pymongo`.
+```python
+db['movies'].update({'_id': id},
+                    {'$set': {'name': 'My new title'}})
 ```
-mkdir movie-bag
-cd movie-bag
+`Pymongo` doesn't use any predefined schema so it can make full use of Schemaless nature of MongoDB.
+
+2) [MongoEngine](http://docs.mongoengine.org/) is an Object-Document Mapper, which uses a document schema that makes working with MongoDB clear and easier.
+Here is the same example using `mongoengine`.
+```python
+Movies.objects(id=id).update(name='My new title')
 ```
+`Mongoengine` uses predefined schema for the fields in the database which restricts it from using the Schemaless nature of MongoDB.
 
-First of all install `pipenv`
-using command
+As we can see both sides have their advantages and disadvantages. So, choose the one that fits your project well. In this series we are going to learn about `Mongoengine`, please do let me know in the comment section below if you want me to cover `Pymongo` as well.
 
+To work better with `Mongoengine` in our `Flask` application there is a great `Flask` extension called [Flask-Mongengine](http://docs.mongoengine.org/projects/flask-mongoengine/en/latest/).
+
+So, let's get started by installing `flask-mongoengine`.
 ```
-pip install --user pipenv
+pipenv install flask-mongoengine
 ```
+*Note: Since `flask-mongoengine` is built on top of `mongoengine` it gets installed automatically while installing flask-mongoengine, also `mongoengine` is build on top of `pymongo` so, it also gets installed*
 
-`Pipenv` is used to create a `virtual environment` which isolates the python packages you used in this project from other system python packages. So, that you can have a different version of same python packages for different projects.
 
-Now, let's install `flask` using `pipenv`
-```
-pipenv install flask
-```
-This will create a new virtual environment and install flask. This command will create two files `Pipfile` and `Pipfile.lock`.
-```
-#~ movie-bag/Pipfile
+Now, let's create a new folder inside `movie-bag`. I am gonna call it `database`. Inside `database` folder create a file named `db.py`. Also, create another file and name it `models.py`
 
-[[source]]
-name = "pypi"
-url = "https://pypi.org/simple"
-verify_ssl = true
+Let's see how files/folder looks like now.
 
-[dev-packages]
-
-[packages]
-flask = "*"
-
-[requires]
-python_version = "3.7"
+```bash
+movie-bag
+│   app.py
+|   Pipfile
+|   Pipfile.lock   
+└───database
+    │   db.py
+    └───models.py
 ```
 
-Pipfile contains the packages that are required for your application. As you can see `flask` is added to `[packages]` list. This means when someone downloads your code and runs `pipenv install`, `flask` gets installed in their system. Great, right?
-
-If you are familiar with `requirements.txt`, think `Pipfile` as the `requirements.txt` on steroids.
-
-
-Flask is so simple that you can create an API using a single file. (But you don't have to 😅)
-
-Create a new file called `app.py` where we are gonna write our Flask Hello World API. Write the following code in `app.py`
+Now, let's dive into the interesting part.
+First of all, let's initialize our database by adding the following code to our `db.py`
 
 ```python
+#~movie-bag/database/db.py
+
+from flask_mongoengine import MongoEngine
+
+db = MongoEngine()
+
+def initialize_db(app):
+    db.init_app(app)
+```
+Here we have imported `MongoEngine` and created the `db` object and we have defined a function `initialize_db()` which we are gonna call from our `app.py` to initialize the database.
+
+
+Let's write the following code in our `movie.py` inside `models` directory
+
+```python
+#~movie-bag/database/models.py
+from .db import db
+
+class Movie(db.Document):
+    name = db.StringField(required=True, unique=True)
+    casts = db.ListField(db.StringField(), required=True)
+    genres = db.ListField(db.StringField(), required=True)
+```
+What we just created is a document for our database. So, that the users cannot add other fields then what are defined here.
+Here we can see the `Movie` document has three fields:
+1) `name`: is a field of type `String`, we also have two constraints in this field.
+    - `required` which means the user cannot create a new movie without giving its title. 
+    - `unique` which means the movie name must be unique and cannot be repeated.
+
+2) `casts`: is a field of type `list` which contains the values of type `String`
+
+3) `genres`: same as `casts`
+
+Finally, we can initialize the database in our `app.py` and change our `view` functions (functions handling our API request) to use the `Movie` document we defined earlier.
+
+```diff
 #~movie-bag/app.py
 
-from flask import Flask
+-from flask import Flask, jsonify, request
++from flask import Flask, request, Response
++from database.db import initialize_db
++from database.models import Movie
+ 
+ app = Flask(__name__)
+ 
+-movies = [
+-    {
+-        "name": "The Shawshank Redemption",
+-        "casts": ["Tim Robbins", "Morgan Freeman", "Bob Gunton", "William Sadler"],
+-        "genres": ["Drama"]
+-    },
+-    {
+-       "name": "The Godfather ",
+-       "casts": ["Marlon Brando", "Al Pacino", "James Caan", "Diane Keaton"],
+-       "genres": ["Crime", "Drama"]
+-    }
+-]
++app.config['MONGODB_SETTINGS'] = {
++    'host': 'mongodb://localhost/movie-bag'
++}
++
++initialize_db(app)
+ 
+-@app.route('/movies')
+-def hello():
+-    return jsonify(movies)
 
-app = Flask(__name__)
++@app.route('/movies')
++def get_movies():
++    movies = Movie.objects().to_json()
++    return Response(movies, mimetype="application/json", status=200)
 
-@app.route('/')
-def hello():
-    return {'hello': 'world'}
+-@app.route('/movies', methods=['POST'])
+-def add_movie():
+-    movie = request.get_json()
+-    movies.append(movie)
+-    return {'id': len(movies)}, 200
 
++@app.route('/movies', methods=['POST'])
++    body = request.get_json()
++    movie = Movie(**body).save()
++    id = movie.id
++    return {'id': str(id)}, 200
 
-app.run()
+-@app.route('/movies/<int:index>', methods=['PUT'])
+-def update_movie(index):
+-    movie = request.get_json()
+-    movies[index] = movie
+-    return jsonify(movies[index]), 200
+
++@app.route('/movies/<id>', methods=['PUT'])
++def update_movie(id):
++    body = request.get_json()
++    Movie.objects.get(id=id).update(**body)
++    return '', 200
+
+-@app.route('/movies/<int:index>', methods=['DELETE'])
+-def delete_movie(index):
+-    movies.pop(index)
+-    return 'None', 200
+
++@app.route('/movies/<id>', methods=['DELETE'])
++def delete_movie(id):
++    Movie.objects.get(id=id).delete()
++    return '', 200
+ 
+ app.run()
 ```
 
-Let's understand what we just wrote. First of all, we imported the `Flask` class from `flask` package.
+Wow! that a lot of changes, let's go step by step with the changes.
 
-Then we define a root endpoint with `@app.route('/')`,  `@app.route()` is called a `decorator` which basically takes function `hello()` extends it's behavior so that it is invoked when `/` endpoint is requested. And `hello()` returns `{'hello': 'world'}`, finally `Flask` server is started with `app.run()`
-
-Wanna learn more about decorators? Read this great article {% link https://dev.to/sonnk/python-decorator-and-flask-4c16 %}
-
-There you go, you have made yourself your very first Flask API (Pat on your back).
-
-To run the app, first, enable the virtual environment that you created earlier while installing `Flask` with
-
+```diff
+-from flask import Flask, jsonify, request
++from flask import Flask, request, Response
++from database.db import initialize_db
++from database.models.movie import Movie
 ```
+
+Here we removed `jsonify` as we no longer need and added `Response` which we use to set the type of response. Then we import `initialize_db` form `db.py` which we defined earlier to initialize our database. And lastly, we imported the `Movie` document form `movie.py`
+
+```diff
++app.config['MONGODB_SETTINGS'] = {
++    'host': 'mongodb://localhost/movie-bag'
++}
++
++db = initialize_db(app)
+```
+
+Here we set the configuration for our mongodb database. Here the host is in the format `<host-url>/<database-name>`. Since we have installed mongodb locally so we can access it from `mongodb://localhost/` and we are gonna name our database `movie-bag`.
+And at the last, we initialize our database.
+
+```diff
++@app.route('/movies')
++def get_movies():
++    movies = Movie.objects().to_json()
++    return Response(movies, mimetype="application/json", status=200)
++
+```
+Here we get all the objects from `Movie` document using `Movies.objects()` and convert them to `JSON` using `to_json()`. At last, we return a `Response` object, where we defined our response type to `application/json`.
+
+
+```diff
++@app.route('/movies', methods=['POST'])
++    body = request.get_json()
++    movie = Movie(**body).save()
++    id = movie.id
++    return {'id': str(id)}, 200
+```
+
+In the `POST` request we first get the `JSON` that we send and a request. And then we load the `Movie` document with the fields from our request with `Movie(**body)`. Here `**` is called the spread operator which is written as `...` in JavaScript (if you are familiar with it.). What it does is like the name suggests, spreads the `dict` object. <br />
+So, that `Movie(**body)` becomes 
+```python
+Movie(name="Name of the movie",
+    casts=["a caste"],
+    genres=["a genre"])
+```
+At last, we save the document and get its `id` which we return as a response.
+
+```diff
++@app.route('/movies/<id>', methods=['PUT'])
++def update_movie(id):
++    body = request.get_json()
++    Movie.objects.get(id=id).update(**body)
++    return '', 200
+```
+
+Here we first find the Movie document matching the `id` sent in the request and then update it. Here also we have applied the spread operator to pass the values to the `update()` function.
+
+
+```diff
++@app.route('/movies/<id>', methods=['DELETE'])
++def delete_movie(id):
++    Movie.objects.get(id=id).delete()
++    return '', 200
+```
+Similar to the `update_movie()` here we get the Movie document matching given `id` and delete it from the database.
+
+Oh, **I just remembered** that we haven't added the API endpoint to `GET` only one document from our server. 
+Let's add it:
+Add the following code right above `app.run()`
+
+```python
+@app.route('/movies/<id>')
+def get_movie(id):
+    movies = Movie.objects.get(id=id).to_json()
+    return Response(movies, mimetype="application/json", status=200)
+```
+Now you can get the single movie from API endpoint `/movies/<valid_id>`.
+
+To run the server make sure you are at `movie-bag` directory.
+
+Then run 
+```bash
 pipenv shell
-```
-Now run the app using,
-```
 python app.py
 ```
 
-The output looks like this:
-```
-* Serving Flask app "app" (lazy loading)
- * Environment: production
-   WARNING: This is a development server. Do not use it in a production deployment.
-   Use a production WSGI server instead.
- * Debug mode: off
- * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
-```
+To activate the virtual environment in your terminal and start the server.
 
-As you can see the app is running on `http://127.0.0.1:5000/`. Type the URL in your browser of choice and see the `JSON` response from the server.
+Wow! Congratulations on making this far. To test the APIs, use `Postman` as we used in the [previous]((https://dev.to/paurakhsharma/flask-rest-api-part-0-setup-basic-crud-api-4650)) part of this series.
 
-*Note: Alias for 127.0.0.1 is localhost, So you can access your API at http:localhost:5000 aswell*
-
-Now let's update our `app.py` to have more fun 😉
-
-```diff
-#~/movie-bag/app.py
-
--from flask import Flask
-+from flask import Flask, jsonify
- 
- app = Flask(__name__)
- 
-+movies = [
-+    {
-+        "name": "The Shawshank Redemption",
-+        "casts": ["Tim Robbins", "Morgan Freeman", "Bob Gunton", "William Sadler"],
-+        "genres": ["Drama"]
-+    },
-+    {
-+       "name": "The Godfather ",
-+       "casts": ["Marlon Brando", "Al Pacino", "James Caan", "Diane Keaton"],
-+       "genres": ["Crime", "Drama"]
-+    }
-+]
-+
--@app.route('/')
-+@app.route('/movies')
-def hello():
--    return {'hello': 'world'}
-+    return jsonify(movies)
- 
- 
- app.run()
-```
-
-*Note:*  *In the code snippet above, `-`(`red`) represents the part of the previous code that was removed and `+`(`green`) represents the code that replaced it. So, if you are coding along with me. Only copy the `green` codes excluding `+` sign.*
-
-Here we imported `jsonify` from `flask` which is used to convert our `movies` list into proper `JSON` value.
-Notice we also renamed our API endpoint from `/` to `/movies`.
-So, now our API should be accessable at `http://localhost:5000/movies`
-
-To see the changes, restart your `Flask` server.
-
-
-To work with our APIs, we are going to use `Postman`. Postman is used for testing the APIs with different HTTP methods. Such as sending data to our web server with `POST` request, updating the data in our server with `PUT` request, getting the data from the server with `GET` and deleting them with `DELETE` request.
-
-Learn more about [REST API HTTP methods here.](https://restfulapi.net/http-methods/)
-
-Install [Postman](https://www.getpostman.com/downloads/) to test your API endpoint easily.
-
-After installing `Postman`, open a new tab and send the `GET` request to your server (http://localhost:5000).
-
-![Postman get request response](https://thepracticaldev.s3.amazonaws.com/i/fzj8uyk1fec894r28xu0.png)
-*GET request response using Postman*
-
-
-Ok now we are ready to add new API endpoints for `CRUD` (Create, Update, Retrieve & Delete)
-
-Add the following code in `app.py` before `app.run()`
-
-```diff
-#~movie-bag/app.py
-
--from flask import Flask, jsonify
-+from flask import Flask, jsonify, request
- 
- app = Flask(__name__)
- 
-@@ -19,5 +19,21 @@ movies = [
- def hello():
-     return jsonify(movies)
- 
-+@app.route('/movies', methods=['POST'])
-+def add_movie():
-+    movie = request.get_json()
-+    movies.append(movie)
-+    return {'id': len(movies)}, 200
-+
-+@app.route('/movies/<int:index>', methods=['PUT'])
-+def update_movie(index):
-+    movie = request.get_json()
-+    movies[index] = movie
-+    return jsonify(movies[index]), 200
-+
-+@app.route('/movies/<int:index>', methods=['DELETE'])
-+def delete_movie(index):
-+    movies.pop(index)
-+    return 'None', 200
- 
- app.run()
-```
-
-As you can see `@app.route()` can take one more argument in addition to the API endpoint. Which is `methods` for API endpoint.
-
-What we have just added are: 
-1) `@app.route('/movies', methods=['POST'])`
-endpoint for adding a new movie to our `movies` list. This endpoint accepts the `POST` request. With `POST` request you can send a new movie for the list. </br>
-*Use postman to send a movie via POST request*
-  - Select `POST` from the dropdown
-  - Click on the `Body` tab and then click `raw`.
-  - Select `JSON` from the drop down (indicating we are sending the data to our server in JSON format.)
-  - Enter the following movie details and hit `SEND`
-```json
-  {
-    "name": "The Dark Knight",
-    "casts": ["Christian Bale", "Heath Ledger", "Aaron Eckhart", "Michael Caine"],
-    "genres": ["Action", "Crime", "Drama"]
-  }
-```
-![Postman POST request response](https://thepracticaldev.s3.amazonaws.com/i/6zll28s9eli18nhc91j8.png)
-*POST request response using Postman*
-<br />
-In the response you get the id of the recently added movie
-```json
-{"id": 2}
-```
-- Now again send `GET` request and see a list of `3` movies is responsed by the server 😊
-
-2) `@app.route('/movies/<int:index>', methods=['PUT'])` endpoint for editing the movie which is already existing on the list based on it's `index` as suggested by `<int:index>`. Similarly for `PUT` request also you have to include the `JSON` body for the movie you want to update. <br />
-  
-![Postman PUT request response](https://thepracticaldev.s3.amazonaws.com/i/4abhnnqiqszksbg88m8q.png)
-
-*PUT request response using Postman*
-- Now send a `GET` request to see the movie you updated actually getting updated on the list of movies.
-  
-3) `@app.route('/movies/<int:index>', methods=['DELETE'])` API endpoint for deleting the movie from the given index of movies list.
-![Postman DELETE request response](https://thepracticaldev.s3.amazonaws.com/i/bpbmmfh3p12vppax6s81.png)
-*DELETE request response using Postman*
-- Now send a `GET` request to `/movies` and see that the movie is already removed from the `movies` list.
+You might have noticed that if we send invalid data to our endpoint e.g: without a name, or other fields we get an unfriendly error in the form of `HTML`. If we try to get the movie document with `id` that doesn't exist in the database then also we get an unfriendly error in the form of `HTML` response. Which is not an excepted behavior of a nicely build API. We will learn how we can handle such errors in the later parts of the series.
 
 ### What we learned from this part of the series?
- - Install `Flask` in a new virtual environment using `pipenv`
- - Create a simple hello world flask application
- - Create API endpoints with `CRUD` functionality.
+ - Difference between `Pymongo` and `Mongoengine`.
+ - How to create Document schema using `Mongoengine`.
+ - How to perform `CRUD` operation using `Mongoengine`.
+ - Python spread operator.
 
+You can find the complete code of this part [here](https://github.com/paurakhsharma/flask-rest-api-blog-series/tree/master/Part%20-%201)
 
-That's it for this part of the series y'all.
-You can find the code for this part [here](https://github.com/paurakhsharma/flask-rest-api-blog-series/tree/master/Part%20-%200).
-
-In this part, we only learned how to store movies in a python list but in the next part of the series, we are going to learn how we can use `Mongoengine` to store our movies in the real `MongoDB` database.
+In the next part, we are going to learn how to better structure your flask application using `Blueprint`. And also how to create REST APIs faster, following best practices with the minimal setup using `flask-restful`
 
 Until then happy coding 😊
