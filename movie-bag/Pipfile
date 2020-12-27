@@ -10,6 +10,7 @@ flake8 = "*"
 white = "*"
 black = "*"
 flask-restful = "*"
+flask-bcrypt = "*"
 
 [dev-packages]
 
