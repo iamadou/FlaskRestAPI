@@ -9,6 +9,7 @@ flask-mongoengine = "*"
 flake8 = "*"
 white = "*"
 black = "*"
+flask-restful = "*"
 
 [dev-packages]
 
