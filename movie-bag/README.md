@@ -18,29 +18,31 @@ touch errors.py
 ```python
 #~/movie-bag/resources/errors.py
 
-class InternalServerError(Exception):
-    pass
+from werkzeug.exceptions import HTTPException
 
-class SchemaValidationError(Exception):
-    pass
+class InternalServerError(HTTPException):
+    code = 500
 
-class MovieAlreadyExistsError(Exception):
-    pass
+class SchemaValidationError(HTTPException):
+    code = 400
 
-class UpdatingMovieError(Exception):
-    pass
+class MovieAlreadyExistsError(HTTPException):
+    code = 400
 
-class DeletingMovieError(Exception):
-    pass
+class UpdatingMovieError(HTTPException):
+    code = 403
 
-class MovieNotExistsError(Exception):
-    pass
+class DeletingMovieError(HTTPException):
+    code = 403
 
-class EmailAlreadyExistsError(Exception):
-    pass
+class MovieNotExistsError(HTTPException):
+    code = 400
 
-class UnauthorizedError(Exception):
-    pass
+class EmailAlreadyExistsError(HTTPException):
+    code = 400
+
+class UnauthorizedError(HTTPException):
+    code = 401 
 
 errors = {
     "InternalServerError": {
