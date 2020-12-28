@@ -1,0 +1,8 @@
+{
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE2MDkxNjIwNTUsIm5iZiI6MTYwOTE2MjA1NSwianRpIjoiMmJlY2M3NjEtZGZjMy00NGIzLTllMWMtNGY3ZDkxMmY5Mzk3IiwiZXhwIjoxNjA5NzY2ODU1LCJpZGVudGl0eSI6IjVmZTlkZDA1M2E2M2JlZjkwMzlmMzIyOSIsImZyZXNoIjpmYWxzZSwidHlwZSI6ImFjY2VzcyJ9.OnNfGb68g_W_2-thdHD7DGPSyGgIys5HQIAJfXN2aKk"
+}
+
+{
+    "email": "leibou2002@yahoo.com",
+    "password": "ibouamadou"
+}
