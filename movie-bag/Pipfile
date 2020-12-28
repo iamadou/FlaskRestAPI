@@ -11,6 +11,7 @@ white = "*"
 black = "*"
 flask-restful = "*"
 flask-bcrypt = "*"
+flask-jwt-extended = "*"
 
 [dev-packages]
 
