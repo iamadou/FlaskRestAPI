@@ -12,6 +12,7 @@ black = "*"
 flask-restful = "*"
 flask-bcrypt = "*"
 flask-jwt-extended = "*"
+flask-mail = "*"
 
 [dev-packages]
 

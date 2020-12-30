@@ -28,6 +28,11 @@ class EmailAlreadyExistsError(HTTPException):
 class UnauthorizedError(HTTPException):
     code = 401
 
+class EmailDoesnotExistsError(HTTPException):
+    code = 400
+
+class BadTokenError(HTTPException):
+    code = 403
 
 errors = {
     "InternalServerError": {
@@ -61,5 +66,13 @@ errors = {
      "UnauthorizedError": {
          "message": "Invalid username or password",
          "status": 401
+     },
+     "EmailDoesnotExistsError": {
+         "message": "Couldn't find the user with given email address",
+         "status": 400
+     },
+     "BadTokenError": {
+         "message": "Invalid token",
+         "status": 403
      }
 }

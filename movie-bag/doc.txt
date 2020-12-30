@@ -6,3 +6,7 @@
     "email": "leibou2002@yahoo.com",
     "password": "ibouamadou"
 }
+
+new token
+
+"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE2MDkzMzk0ODgsIm5iZiI6MTYwOTMzOTQ4OCwianRpIjoiYmE2NmE4ZjMtMzU4ZC00M2MyLWI2N2MtNTlhNTAxNTRkN2UzIiwiZXhwIjoxNjA5NDI1ODg4LCJpZGVudGl0eSI6IjVmZTlkZDA1M2E2M2JlZjkwMzlmMzIyOSIsImZyZXNoIjpmYWxzZSwidHlwZSI6ImFjY2VzcyJ9._TBFXKTm1Re_1Bi3OgTg_hen2_Z4Tc_scJPYIIfu-3U"
