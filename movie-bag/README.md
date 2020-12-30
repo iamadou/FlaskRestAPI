@@ -1,393 +1,309 @@
-## Part 5: Password Reset
+## Part 6: Testing REST APIs
 
-Howdy! In the previous [Part](https://dev.to/paurakhsharma/flask-rest-api-part-4-exception-handling-5c6a) of the series, we learned how to handle errors in Flask and send a meaningful error message to the client.
+Howdy! In the previous [Part](https://dev.to/paurakhsharma/flask-rest-api-part-5-password-reset-2f2e) of the series, we learned how to perform
+password reset in our REST API.
 
-In this part, we are going to implement a password reset feature in our application.
-Here is the brief diagram of how the password reset flow is gonna look like.
+In this part, we are going to learn how to test our REST API endpoints.
 
-![Password reset flow diagram](https://thepracticaldev.s3.amazonaws.com/i/6b04olppbml2z2n6gpo4.png)
-*Password reset flow diagram*
+### Why should we spend time writing tests?
+- To make sure our application doesn't break while making changes/refactoring
+- To automate repetitive manual tests reducing human errors
+- Be able to release to the production on Fridays ;)
+- Testing provides a better CI/ CD workflow.
 
-We are going to use the `flask-jwt-extended` library to generate password reset token, the good thing is we have already installed it while implementing authentication. We need to send reset token to the user through email, for that we are going to use [Flask Mail](https://pythonhosted.org/flask-mail/).
+I hope you are convinced that we should write tests. Let's get started with testing our Flask application.
 
+When it comes to testing, there are two most popular tools to test Python applications.
+1) [unittest](https://docs.python.org/3/library/unittest.html): `unittest` is a python [standard library](https://docs.python.org/3/library/) which means it is distributed with Python. `unittest` provides tons of tools for constructing and running tests.
+
+2) [pytest](https://docs.pytest.org/en/latest/): `pytest` is a python library which I like to call is the superset of `unittest` which means you can run tests written in `unittest` with `pytest`. It makes writing tests easier and faster.
+
+In this tutorial, we are going to learn how to write tests using `unittest`, because it enables us to write our tests using [OOP](https://docs.python.org/3/tutorial/classes.html).
+
+Before we start, remove the line below from `app.py`
+
+```py
+app.config['MONGODB_SETTINGS'] = {
+    'host': 'mongodb://localhost/movie-bag'
+}
 ```
-pipenv install flask-mail
+and add
+```bash
+MONGODB_SETTINGS = {
+    'host': 'mongodb://localhost/movie-bag'
+}
 ```
+to our `.env`, this step is required because we want to use a different database for developing our application and running the tests.
 
-Let's register this mail server in our `app.py`:
+First of all, let's create an `env` file to store our test-related configurations, we should separate our test configs from our development and production configs.
 
-```diff
-#~/movie-bag/app.py
-
-from flask import Flask
- from flask_bcrypt import Bcrypt
- from flask_jwt_extended import JWTManager
-+from flask_mail import Mail
-
- ...
-
- api = Api(app, errors=errors)
- bcrypt = Bcrypt(app)
- jwt = JWTManager(app)
-+mail = Mail(app)
-
- app.config['MONGODB_SETTINGS'] = {
-     'host': 'mongodb://localhost/movie-bag'
-...
-```
-
-Now, let's create a service to send the email to the client, let's create a new folder `services` and a new file `mail_service.py` inside it. Add the following contents to the newly created file.
+In the root directory create a file `.env.test` and add the following configs to it.
 
 ```bash
-mkdir services
-cd services
-touch mail_service.py
+touch .env.test
+```
+
+```bash
+#~/movie-bag/.env.test
+
+JWT_SECRET_KEY = 'super-secret'
+MAIL_SERVER: "localhost"
+MAIL_PORT = "1025"
+MAIL_USERNAME = "support@movie-bag.com"
+MAIL_PASSWORD = ""
+MONGODB_SETTINGS = {
+    'host': 'mongodb://localhost/movie-bag-test'
+}
+```
+>*Notice that we have used different database for our test config, this is done because our tests and we want our tests and development database to be separated. We also want our test database to be empty before running the tests.*
+
+Now, let's create a new folder `tests` inside our root directory. Create a new file `__init__.py` inside the `tests` folder, also, create a new file `test_signup.py`.
+
+```bash
+mkdir tests
+cd tests
+touch __init__.py
+touch test_signup.py
 ```
 
 ```python
-#~/movie-bag/services/mail_service.py
+#~/movie-bag/tests/test_signup.py
 
-from threading import Thread
-from flask_mail import Message
+import unittest
+import json
 
 from app import app
-from app import mail
+from database.db import db
 
 
-def send_async_email(app, msg):
-    with app.app_context():
-        try:
-            mail.send(msg)
-        except ConnectionRefusedError:
-            raise InternalServerError("[MAIL SERVER] not working")
+class SignupTest(unittest.TestCase):
 
+    def setUp(self):
+        self.app = app.test_client()
+        self.db = db.get_db()
 
-def send_email(subject, sender, recipients, text_body, html_body):
-    msg = Message(subject, sender=sender, recipients=recipients)
-    msg.body = text_body
-    msg.html = html_body
-    Thread(target=send_async_email, args=(app, msg)).start()
+    def test_successful_signup(self):
+        # Given
+        payload = json.dumps({
+            "email": "paurakh011@gmail.com",
+            "password": "mycoolpassword"
+        })
+
+        # When
+        response = self.app.post('/api/auth/signup', headers={"Content-Type": "application/json"}, data=payload)
+
+        # Then
+        self.assertEqual(str, type(response.json['id']))
+        self.assertEqual(200, response.status_code)
+
+    def tearDown(self):
+        # Delete Database collections after the test is complete
+        for collection in self.db.list_collection_names():
+            self.db.drop_collection(collection)
 ```
 
-Here you can see we have created a function `send_mail()` which takes `subject`, `sender`, `recipients`, `text_body` and `html_body` as arguments. It then creates a message object and runs `send_async_email()` in a separate thread, this is because while sending an email to the client we have to relay to the separate services such as Google, Outlook, etc.
 
-Since these services can take some time to actually send the email, we are going to tell the client that their request was successful and start sending the email in a separate thread.
+Let's go step by step to understand what is actually going on.
 
-Now we are ready to implement the password reset. As shown in the diagram above we are going to create two different endpoints for this.
+First of all, we define `SignupTest` class which extends `unittest.TestCase`. `TestCase` provides us with useful methods such as `setUp` and `tearDown` and also the assertation methods.
 
-1) `/forget`: This endpoint takes the `email` of the user whose account needs to be changed. This endpoint then sends the email to the user with the link which contains reset token to reset the password.
+`setUp()` method runs each time before running each method defined on the `SignupTest` class. `setUp()` as the name suggests is used to set up our test infrastructure before running the tests.<br>
+Here you can see we define `this.app` and `this.db` in this method. We use `app.test_client()` instead of `app` because it makes testing our flask application easier. Also, we get our `Database` instance with `db.get_db()` and set it to `this.db`.
 
-2) `/reset`: This endpoint takes `reset_token` sent in the email and the new `password`.
 
-Let's create a `reset_password.py` inside the `resources` folder. With the following code:
+Similarly, `test_successful_signup()` is the method that is actually testing the `Signup` feature. Here we have defined a payload which should be a `JSON` value. And we send a `POST` request to `/api/auth/signup`.
+
+The response from the request is used to finally assert that our `Signup` feature actually sent the user id and successful status code which is `200`.
+
+Finally, after each test methods the `tearDown()` method runs each time. This method is responsible for clearing our infrastructure setup. This includes deleting our database collection for `test isolation`.
+
+### Test Isolation
+Test isolation is one of the most important concepts in testing. Usually, when we are writing tests, we test one business logic. The idea of test isolation is that one of your tests should not in any way affect another test.<br>
+Suppose that you have created a user in one test and you are testing login on another test. To follow test isolation you cannot depend on the user-created in a user creation test, but should create the user right in the test where you are going to test login. Why? Because your login test might run before your user creation test this makes your test fail.
+
+Also, if we do not delete our user which we created on the previous test run, and we try to run the test again, our test fails because the user is already there.
+So, we should always test a feature from an empty state and for that easiest way is to delete all the collections in our database.
+
+
+Before running our first test make sure to export environment variable `ENV_FILE_LOCATION` with the location to the test env file.
+
+To set this value mac/linux can run the command:
+```
+export ENV_FILE_LOCATION=./.env.test
+```
+
+and windows user can run the command:
+```
+set ENV_FILE_LOCATION=./.env.test
+```
+
+Make sure you have activated your virtual environment with `pipenv shell`.
+
+To run the test enter this command in your terminal.
+```
+python -m unittest tests/test_signup.py
+```
+
+You should be able to see the output like this:
+```
+.
+----------------------------------------------------------------------
+Ran 1 test in 1.023s
+
+OK
+```
+This means our test run successfully.
+
+**If you run into any error feel free to comment down, I am always ready to help you out**
+
+As you can see we are going to need this `setUp()` and `tearDown()` in our ever TestCase. So, let's move this logic to a new file, let's call it `BaseCase.py`.
 
 ```python
-#~/movie-bag/resources/reset_password.py
+#~/movie-bag/tests/BaseCase.py
 
-from flask import request, render_template
-from flask_jwt_extended import create_access_token, decode_token
-from database.models import User
-from flask_restful import Resource
-import datetime
-from resources.errors import SchemaValidationError, InternalServerError, \
-    EmailDoesnotExistsError, BadTokenError
-from jwt.exceptions import ExpiredSignatureError, DecodeError, \
-    InvalidTokenError
-from services.mail_service import send_email
+import unittest
 
-class ForgotPassword(Resource):
-    def post(self):
-        url = request.host_url + 'reset/'
-        try:
-            body = request.get_json()
-            email = body.get('email')
-            if not email:
-                raise SchemaValidationError
-
-            user = User.objects.get(email=email)
-            if not user:
-                raise EmailDoesnotExistsError
-
-            expires = datetime.timedelta(hours=24)
-            reset_token = create_access_token(str(user.id), expires_delta=expires)
-
-            return send_email('[Movie-bag] Reset Your Password',
-                              sender='support@movie-bag.com',
-                              recipients=[user.email],
-                              text_body=render_template('email/reset_password.txt',
-                                                        url=url + reset_token),
-                              html_body=render_template('email/reset_password.html',
-                                                        url=url + reset_token))
-        except SchemaValidationError:
-            raise SchemaValidationError
-        except EmailDoesnotExistsError:
-            raise EmailDoesnotExistsError
-        except Exception as e:
-            raise InternalServerError
+from app import app
+from database.db import db
 
 
-class ResetPassword(Resource):
-    def post(self):
-        url = request.host_url + 'reset/'
-        try:
-            body = request.get_json()
-            reset_token = body.get('reset_token')
-            password = body.get('password')
+class BaseCase(unittest.TestCase):
 
-            if not reset_token or not password:
-                raise SchemaValidationError
+    def setUp(self):
+        self.app = app.test_client()
+        self.db = db.get_db()
 
-            user_id = decode_token(reset_token)['identity']
 
-            user = User.objects.get(id=user_id)
-
-            user.modify(password=password)
-            user.hash_password()
-            user.save()
-
-            return send_email('[Movie-bag] Password reset successful',
-                              sender='support@movie-bag.com',
-                              recipients=[user.email],
-                              text_body='Password reset was successful',
-                              html_body='<p>Password reset was successful</p>')
-
-        except SchemaValidationError:
-            raise SchemaValidationError
-        except ExpiredSignatureError:
-            raise ExpiredTokenError
-        except (DecodeError, InvalidTokenError):
-            raise BadTokenError
-        except Exception as e:
-            raise InternalServerError
+    def tearDown(self):
+        # Delete Database collections after the test is complete
+        for collection in self.db.list_collection_names():
+            self.db.drop_collection(collection)
 ```
 
-Here in the `ForgotPassword` resource, we first get the user based on the `email` provided by the client. We are then using `create_access_token()` to create a token based on `user.id` and this token expires in 24 hours. We are then sending the email to the client. The email contains both `HTML` and text format information.
-
-Similarly in `ResetPassword` resource, we first get the user based on user id from the reset_token and then reset the password of the user based on the password provided by the user. Finally, a reset success email is sent to the user.
-
-Let's create the new exceptions `EmailDoesnotExistsError` and `BadTokenError` in our `errors.py`.
+Now update your `test_signup.py` to look like this:
 
 ```diff
-#~/movie-bag/resources/errors.py
 
- class UnauthorizedError(Exception):
-     pass
+ import json
 
-+class EmailDoesnotExistsError(Exception):
-+    pass
-+
-+class BadTokenError(Exception):
-+    pass
-+
- errors = {
-     "InternalServerError": {
-         "message": "Something went wrong",
-@@ -54,5 +60,13 @@ errors = {
-      "UnauthorizedError": {
-          "message": "Invalid username or password",
-          "status": 401
-+     },
-+     "EmailDoesnotExistsError": {
-+         "message": "Couldn't find the user with given email address",
-+         "status": 400
-+     },
-+     "BadTokenError": {
-+         "message": "Invalid token",
-+         "status": 403
-      }
- }
-```
+-from app import app
+-from database.db import db
++from tests.BaseCase import BaseCase
 
-We need to create templates for HTML and text files that we need to send to the client. Let's create `templates` folder in our root directory, And inside `templates` create another folder `email` where we are creating two new files `reset_password.html` and `reset_password.txt`.
-
-```bash
-mkdir templates
-cd templates
-mkdir email
-cd email
-touch reset_password.html
-touch reset_password.txt
-```
-
-In reset_password.html let's add the following:
-```html
-<!-- #~/movie-bag/templates/email/reset-password.html -->
-
-<p>Dear, User</p>
-<p>
-    To reset your password
-    <a href="{{ url }}">
-        click here
-    </a>.
-</p>
-<p>Alternatively, you can paste the following link in your browser's address bar:</p>
-<p>{{ url }}</p>
-<p>If you have not requested a password reset simply ignore this message.</p>
-<p>Sincerely</p>
-<p>Movie-bag Support Team</p>
-
-```
-
-Here `{{ url }}` substitutes the url we have sent earlier in the `render_template()` function.
-
-Similarly, add the following in `reset_password.txt`:
-
-```txt
-Dear, User
-
-To reset your password click on the following link:
-
-{{ url }}
-
-If you have not requested a password reset simply ignore this message.
-
-Sincerely
-
-Movie-bag Support Team
-```
-
-Now, we are ready to wire this `Resources` to our `routes.py`.
-
-```diff
- from .movie import MoviesApi, MovieApi
- from .auth import SignupApi, LoginApi
-+from .reset_password import ForgotPassword, ResetPassword
-
- def initialize_routes(api):
-
-     ...
-
-     api.add_resource(LoginApi, '/api/auth/login')
-+
-+    api.add_resource(ForgotPassword, '/api/auth/forgot')
-+    api.add_resource(ResetPassword, '/api/auth/reset')
-
-```
-
-Now, if you try to run the application with `python app.py`
-
-You'll see the error something like this:
-```bash
-ImportError: cannot import name 'initialize_routes' from 'resources.routes' (/home/paurakh/blog/flask/flask-restapi-series/movie-bag/resources/routes.py)
-```
-
-This is because of the circular dependency problem in python. In our `reset_password.py`, we import `send_mail` which is importing `app` from `app.py` whereas `app` is not yet defined on our `app.py`.
-
-![Circular dependency](https://thepracticaldev.s3.amazonaws.com/i/3ymtwfv8cdeyc9t57bgh.png)
-
-To solve this issue we are going to create another file `run.py` in our root directory, which will be responsible for running our app. Also, we need to initialize our routes/view functions after we have initialized our app.
-
-```
-touch run.py
-```
-
-Now, our `app.py` should look like this:
-
-```diff
-#~/movie-bag/app.py
-
- from database.db import initialize_db
- from flask_restful import Api
--from resources.routes import initialize_routes
- from resources.errors import errors
-
- app = Flask(__name__)
- app.config.from_envvar('ENV_FILE_LOCATION')
-+mail = Mail(app)
-+
-+# imports requiring app and mail
-+from resources.routes import initialize_routes
-
- api = Api(app, errors=errors)
- bcrypt = Bcrypt(app)
- jwt = JWTManager(app)
--mail = Mail(app)
-
-...
-
- initialize_db(app)
- initialize_routes(api)
 -
--app.run()
+class SignupTest(unittest.TestCase):
+-
+-    def setUp(self):
+-        self.app = app.test_client()
+-        self.db = db.get_db()
+
+     def test_successful_signup(self):
+         # Given
+...
+-
+-    def tearDown(self):
+-        # Delete Database collections after the test is complete
+-        for collection in self.db.list_collection_names():
+-            self.db.drop_collection(collection)
 ```
 
-In our `run.py` we just run the app:
+Now let's add test for our `Login` feature, create a new file `test_login.py` inside `tests` folder with the following code.
 
 ```python
-#~/movie-bag/run.py
+#~/movie-bag/tests/test_login.py
 
-from app import app
+import json
 
-app.run()
+from tests.BaseCase import BaseCase
+
+class TestUserLogin(BaseCase):
+
+    def test_successful_login(self):
+        # Given
+        email = "paurakh011@gmail.com"
+        password = "mycoolpassword"
+        payload = json.dumps({
+            "email": email,
+            "password": password
+        })
+        response = self.app.post('/api/auth/signup', headers={"Content-Type": "application/json"}, data=payload)
+
+        # When
+        response = self.app.post('/api/auth/login', headers={"Content-Type": "application/json"}, data=payload)
+
+        # Then
+        self.assertEqual(str, type(response.json['token']))
+        self.assertEqual(200, response.status_code)
 ```
 
-Add configuration for our `MAIL_SERVER` in `.env`
-```diff
 
-JWT_SECRET_KEY = 't1NP63m4wnBg6nyHYKfmc2TpCOGI4nss'
-+MAIL_SERVER: "localhost"
-+MAIL_PORT = "1025"
-+MAIL_USERNAME = "support@movie-bag.com"
-+MAIL_PASSWORD = ""
+Here we first created the user with `/api/auth/signup` endpoint and login using the same email and password and assert that the `/api/auth/login` endpoint returns the token.
+
+Now, let's add tests to check the creation of the movie.
+Create `test_create_movie.py` with the code below.
+
+```python
+#movie-bag/tests/test_create_movie.py
+
+import json
+
+from tests.BaseCase import BasicTest
+
+class TestUserLogin(BasicTest):
+
+    def test_successful_login(self):
+        # Given
+        email = "paurakh011@gmail.com"
+        password = "mycoolpassword"
+        user_payload = json.dumps({
+            "email": email,
+            "password": password
+        })
+
+        self.app.post('/api/auth/signup', headers={"Content-Type": "application/json"}, data=user_payload)
+        response = self.app.post('/api/auth/login', headers={"Content-Type": "application/json"}, data=user_payload)
+        login_token = response.json['token']
+
+        movie_payload = {
+            "name": "Star Wars: The Rise of Skywalker",
+            "casts": ["Daisy Ridley", "Adam Driver"],
+            "genres": ["Fantasy", "Sci-fi"]
+        }
+        # When
+        response = self.app.post('/api/movies',
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {login_token}"},
+            data=json.dumps(movie_payload))
+
+        # Then
+        self.assertEqual(str, type(response.json['id']))
+        self.assertEqual(200, response.status_code)
 ```
 
-Start a SMTP server in next terminal with:
-```bash
-python -m smtpd -n -c DebuggingServer localhost:1025
+To run all the tests at once use the command:
+
 ```
-This will create an SMTP server for testing our email feature.
-
-
-Now run the app with
-```bash
-python run.py
-```
-*Note: remember to export `ENV_FILE_LOCATION`*
-
-![Postmant forgot endpoint request](https://thepracticaldev.s3.amazonaws.com/i/2rrs1eu5v39t50sysbur.png)
-
-If the email is of the existing user you can see the email in the terminal running `smtp` server as:
-
-```html
-
-<p>Dear, User</p>
-<p>
-    To reset your password
-    <a href="http://localhost:3000/reset/eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE1NzgzOTU0ODUsIm5iZiI6MTU3ODM5NTQ4NSwianRpIjoiZTEyZDg3ODgtMTkwZS00NWI1LWI0YzYtZTdkMTYzZjc5ZGZlIiwiZXhwIjoxNTc4NDgxODg1LCJpZGVudGl0eSI6IjVlMTQxNTJmOWRlNzQxZDNjNGYwYmNiYiIsImZyZXNoIjpmYWxzZSwidHlwZSI6ImFjY2VzcyJ9.dLJnhYTYMnLuLg_cHDdqi-jsXeISeMq75mb-ozaNxlw">
-        click here
-    </a>.
-</p>
-<p>Alternatively, you can paste the following link in your browser's address bar:</p>
-<p>http://localhost:3000/reset/eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE1NzgzOTU0ODUsIm5iZiI6MTU3ODM5NTQ4NSwianRpIjoiZTEyZDg3ODgtMTkwZS00NWI1LWI0YzYtZTdkMTYzZjc5ZGZlIiwiZXhwIjoxNTc4NDgxODg1LCJpZGVudGl0eSI6IjVlMTQxNTJmOWRlNzQxZDNjNGYwYmNiYiIsImZyZXNoIjpmYWxzZSwidHlwZSI6ImFjY2VzcyJ9.dLJnhYTYMnLuLg_cHDdqi-jsXeISeMq75mb-ozaNxlw</p>
-<p>If you have not requested a password reset simply ignore this message.</p>
-<p>Sincerely</p>
-<p>Movie-bag Support Team</p>
+python -m unittest --buffer
 ```
 
-As you can see the URL is of format:
+Here `--buffer` or `-b` is used to discard the output on a successful test run.
 
-`http://localhost:3000/reset/<reset_token>`, you need to copy this token a send manually in your `/reset` endpoint.
 
-*Note: We will learn how to implement to reset automatically in our front-end series but for now we need to manually copy the reset_token*
+Here we first signup for the user account, log in as the user to get the login token and then use the login token to create a movie. Finally, we check to see if the movie creating endpoint returns the `id` to the created movie.
 
-![Postman reset password request](https://thepracticaldev.s3.amazonaws.com/i/naz25gfxwa6dy6e9uo6l.png)
+You might have noticed in this test we only check if the movie creation works but do not check if the user creation worked or user login worked. This is because we already have separate tests that are testing these things so, we don't have to repeat the same tests.
 
-Congratulations your password is changed successfully. Now, you can log in with the new password.
 
-You should also get the email stating your password was reset successfully.
+>*We have only created happy path tests but it is crucial for us to test that our application response is expected even in the case when the user enters invalid input. For instance, the user doesn't send the password while signing up or sends an invalid format email.*
 
-```html
-<p>Password reset was successful</p>
-```
+**I have not included these tests in the tutorial itself, but I will be sure to include them in the Github repo.**
 
-You can find all the code we have written till now [here](https://github.com/paurakhsharma/flask-rest-api-blog-series/tree/master/Part%20-%205)
+You can find all the code we have written till now and **more tests** [here](https://github.com/paurakhsharma/flask-rest-api-blog-series/tree/master/Part%20-%206)
 
 ### What we learned from this part of the series?
-- How to create token for resetting user password
-- How to send email to using `Flask-mail`
-- How to reset user password
-- How to avoid circular dependancy in flask.
+- Why we should write tests for our application
+- What test isolation is and why we should isolate our tests cases
+- How to test Flask REST APIs with `unittest`
 
-In the next part of the series we are going to learn about testing our Flask REST APIs.
 
 Until then, Happy Coding 😊
+
