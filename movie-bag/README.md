@@ -297,6 +297,21 @@ You might have noticed in this test we only check if the movie creation works bu
 
 **I have not included these tests in the tutorial itself, but I will be sure to include them in the Github repo.**
 
+Other way to run all the test is used ```pytest``` module to run all these tests by typing following commands:
+```
+(movie-bag) ~/FlaskRestAPI/movie-bag$ pytest 
+===================================================================================== test session starts  =====================================================================================
+platform linux -- Python 3.8.5, pytest-6.2.1, py-1.10.0, pluggy-0.13.1
+rootdir: ~/FlaskRestAPI/movie-bag
+collected 7 items                                                                                                                                                                             
+
+tests/test_create_movie.py .                                                                                                                                                            [ 14%]
+tests/test_get_movie.py ..                                                                                                                                                              [ 42%]
+tests/test_get_movies.py ..                                                                                                                                                             [ 71%]
+tests/test_login.py .                                                                                                                                                                   [ 85%]
+tests/test_signup.py .                                                                                                                                                                  [100%]
+```
+
 You can find all the code we have written till now and **more tests** [here](https://github.com/paurakhsharma/flask-rest-api-blog-series/tree/master/Part%20-%206)
 
 ### What we learned from this part of the series?
